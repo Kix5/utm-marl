@@ -1,0 +1,17 @@
+# Checkpoints (large files, personal)
+checkpoints_*/
+logs_*/
+results/
+figures/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Personal config
+*.env

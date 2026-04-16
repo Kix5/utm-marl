@@ -12,7 +12,7 @@ import matplotlib.gridspec as gridspec
 import matplotlib.patches as mpatches
 import os
 
-os.makedirs('/Users/khadija/Desktop/Project/utm_bluesky/figures', exist_ok=True)
+os.makedirs('./Project/utm_bluesky/figures', exist_ok=True)
 
 # ── Colours ────────────────────────────────────────────────────────────────
 C_RANDOM     = "#95A5A6"
@@ -104,7 +104,7 @@ legend_els = [
 fig.legend(handles=legend_els, loc="lower center", ncol=5,
            fontsize=9, bbox_to_anchor=(0.5, -0.08))
 plt.tight_layout()
-plt.savefig("/Users/khadija/Desktop/Project/utm_bluesky/figures/fig_comparison.png",
+plt.savefig("./Project/utm_bluesky/figures/fig_comparison.png",
             dpi=150, bbox_inches="tight", facecolor=BG)
 print("Saved: fig_comparison.png")
 
@@ -186,7 +186,7 @@ ax3.legend(fontsize=9, loc="lower left")
 fig2.suptitle("MILP Baseline Scalability — O(K²×S) Variable Growth",
               fontsize=12, fontweight="bold", color="#2C3E50", y=1.02)
 plt.tight_layout()
-plt.savefig("/Users/khadija/Desktop/Project/utm_bluesky/fig_milp_scalability.png",
+plt.savefig("./Project/utm_bluesky/fig_milp_scalability.png",
             dpi=150, bbox_inches="tight", facecolor=BG)
 print("Saved: fig_milp_scalability.png")
 
@@ -279,7 +279,7 @@ ax3p.annotate("λ₂ converges →\nconflict penalised",
               arrowprops=dict(arrowstyle="->", color="#9B59B6"))
 
 plt.tight_layout()
-plt.savefig("/Users/khadija/Desktop/Project/utm_bluesky/figures/fig_training_curves.png",
+plt.savefig("./Project/utm_bluesky/figures/fig_training_curves.png",
             dpi=150, bbox_inches="tight", facecolor=BG)
 print("Saved: fig_training_curves.png")
 
@@ -338,8 +338,8 @@ legend_els = [
 ax.legend(handles=legend_els, loc="upper right",
           fontsize=9, framealpha=0.9)
 plt.tight_layout()
-plt.savefig("/Users/khadija/Desktop/Project/utm_bluesky/figures/fig_airspace.png",
+plt.savefig("./Project/utm_bluesky/figures/fig_airspace.png",
             dpi=150, bbox_inches="tight", facecolor=BG)
 print("Saved: fig_airspace.png")
 
-print("\nAll figures saved to /Users/khadija/Desktop/Project/utm_bluesky/figures/")
+print("\nAll figures saved to ./Project/utm_bluesky/figures/")
