@@ -18,12 +18,15 @@ NO_FLY_ZONES      = []
 
 
 class SectorGraph:
-    def __init__(self):
-        self.rows       = GRID_ROWS
-        self.cols       = GRID_COLS
-        self.n_sectors  = GRID_ROWS * GRID_COLS
-        self.no_fly     = set(NO_FLY_ZONES)
-        self.capacities = {s: SECTOR_CAPACITIES.get(s, 2) for s in range(self.n_sectors)}
+    def __init__(self, rows=None, cols=None, capacities=None, no_fly=None):
+        # Grid size now comes from the env (get_config) rather than being hardcoded,
+        # so the graph and the environment can never disagree about the airspace.
+        self.rows       = GRID_ROWS if rows is None else rows
+        self.cols       = GRID_COLS if cols is None else cols
+        self.n_sectors  = self.rows * self.cols
+        self.no_fly     = set(NO_FLY_ZONES if no_fly is None else no_fly)
+        base_caps       = SECTOR_CAPACITIES if capacities is None else capacities
+        self.capacities = {s: base_caps.get(s, 2) for s in range(self.n_sectors)}
         for s in self.no_fly:
             self.capacities[s] = 0
         self._adj = {s: self._neighbours(s) for s in range(self.n_sectors)}

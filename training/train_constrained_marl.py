@@ -31,7 +31,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "env"))
 
 from env.bluesky_utm_env import BlueSkyUTMEnv
-
 try:
     from torch.utils.tensorboard import SummaryWriter
     HAS_TB = True
@@ -42,6 +41,11 @@ _SCALE     = int(os.environ.get("UTM_SCALE", "5"))
 # ── Hyperparameters ────────────────────────────────────────────────────────
 N_DRONES    = _SCALE
 TOTAL_STEPS = 200_000
+# Number of POLICY UPDATES to train for. This is the true training-effort knob.
+# The old code derived updates = timesteps // (N_STEPS * N_DRONES), which
+# silently collapsed at scale (156 updates at 5 drones -> 7 at 100). Fixing the
+# update count directly makes every fleet size train equally (fair comparison).
+N_UPDATES   = 50  # baseline-equivalent training effort
 N_STEPS     = 256
 N_EPOCHS    = 8
 BATCH_SIZE  = 128
@@ -52,7 +56,7 @@ CLIP_RANGE  = 0.2
 ENT_COEF    = 0.01
 
 # ── Lagrangian hyperparameters ─────────────────────────────────────────────
-LR_LAMBDA   = 0.01    # dual learning rate α_λ
+LR_LAMBDA   = 0.06   # dual learning rate α_λ
 B_CAP       = 0.0     # sector overload budget (0 = zero tolerance)
 B_SEP       = 0.0     # conflict budget (0 = zero tolerance)
 LAMBDA_INIT = 0.5     # initial multiplier value
@@ -67,7 +71,7 @@ CKPT_DIR   = f"./checkpoints_constrained_{_SCALE}"
 # ══════════════════════════════════════════════════════════════════════════
 
 class SharedActorCritic(nn.Module):
-    def __init__(self, obs_dim: int, n_actions: int, hidden: int = 256):
+    def __init__(self, obs_dim: int, n_actions: int, hidden: int = 1024):
         super().__init__()
         self.shared = nn.Sequential(
             nn.Linear(obs_dim, hidden), nn.Tanh(),
@@ -231,12 +235,12 @@ class ConstrainedMARLTrainer:
         self.env = ConstrainedUTMEnv(
             n_drones    = N_DRONES,
             render_mode = "none" , 
-            #render_mode = "human" if render else "none",
+            #render_mode = "human" if render else "none",s
             max_steps   = 200
         )
 
         obs_dim   = self.env.agent_obs_dim
-        n_actions = self.env.n_sectors
+        n_actions = self.env.action_space.n   # = n_sectors * N_LAYERS (was n_sectors: capped policy to layer 0!)
 
         self.policy = SharedActorCritic(obs_dim, n_actions).to(self.device)
         self.optim  = optim.Adam(
@@ -411,7 +415,7 @@ class ConstrainedMARLTrainer:
 
     # ── Training loop ──────────────────────────────────────────────────────
 
-    def train(self, total_steps: int = TOTAL_STEPS):
+    def train(self, total_steps: int = TOTAL_STEPS, n_updates: int = None):
         print("=" * 65)
         print("Constrained MARL — Lagrangian PPO")
         print(f"  Drones:       {N_DRONES}")
@@ -422,7 +426,14 @@ class ConstrainedMARLTrainer:
         print(f"  Steps:        {total_steps:,}")
         print("=" * 65)
 
-        updates = total_steps // (N_STEPS * N_DRONES)
+        # FIXED: train for a set number of updates, independent of N_DRONES,
+        # so 5 / 100 / 500 UAVs all get equal training effort. If n_updates is
+        # not given, fall back to the (legacy) timesteps-based count.
+        if n_updates is None:
+            n_updates = total_steps // (N_STEPS * N_DRONES)
+        updates = max(1, n_updates)
+        print(f"  Updates:      {updates}  (N_STEPS={N_STEPS}, "
+              f"rollout={N_STEPS*N_DRONES} agent-steps)")
         for upd in range(1, updates + 1):
             self.collect()
             losses = self.update()
@@ -459,9 +470,14 @@ class ConstrainedMARLTrainer:
             self.env.reset()
             all_obs = self.env.get_all_agent_obs()
             ep_rew, done, step = 0.0, False, 0
-
-            while not done and step < 100:   # ← hard cap at 100 steps
-                acts = [self.policy.act(all_obs[i], deterministic=True)
+            # Run the FULL episode (match the env's max_steps, not a shorter cap),
+            # so throughput reflects drones that actually complete.
+            # Evaluate with SAMPLING (deterministic=False), matching how the
+            # cooperative stochastic policy actually operates. Pure-argmax eval
+            # makes all agents pick identical actions and collapse, which is a
+            # known MARL artifact, not the policy's true behavior.
+            while not done and step < self.env.max_steps:
+                acts = [self.policy.act(all_obs[i], deterministic=False)
                         for i in range(N_DRONES)]
                 all_obs, rewards, _, terminated, truncated, info = \
                     self.env.step_joint(acts)
@@ -469,8 +485,14 @@ class ConstrainedMARLTrainer:
                 done    = terminated or truncated
                 step   += 1
 
-            m.record(ep_rew, info["ep_conflicts"], info["ep_overloads"],
-                    info["ep_completed"], N_DRONES, self.lagrange.lam1, self.lagrange.lam2)
+            # Per-step conflicts/overloads (consistent with the training metric);
+            # throughput = fraction of drones that reached their goal by episode end.
+            steps_taken        = max(step, 1)
+            conflicts_per_step = info["ep_conflicts"] / steps_taken
+            overloads_per_step = info["ep_overloads"] / steps_taken
+            completed          = info["ep_completed"]
+            m.record(ep_rew, conflicts_per_step, overloads_per_step,
+                    completed, N_DRONES, self.lagrange.lam1, self.lagrange.lam2)
 
         print("── Evaluation Results ──────────────────────────")
         print(f"  Mean reward:     {m.mean(m.rewards):+.2f}")
@@ -592,14 +614,19 @@ def compare_methods(constrained_results: dict,
 
     print("=" * 65)
 
+from attention_policy import SharedActorCritic
 
 # ══════════════════════════════════════════════════════════════════════════
 # ENTRY POINT
 # ══════════════════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
+    
     parser = argparse.ArgumentParser()
     parser.add_argument("--timesteps",    type=int,  default=TOTAL_STEPS)
+    parser.add_argument("--updates",      type=int,  default=N_UPDATES,
+                        help="Number of policy updates (fair across scales). "
+                             "Overrides the legacy timesteps-based count.")
     parser.add_argument("--render",       action="store_true")
     parser.add_argument("--compare",      action="store_true",
                         help="Run comparison vs vanilla MAPPO after training")
@@ -613,7 +640,7 @@ if __name__ == "__main__":
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
 
-    device = "cpu"  # MPS can cause device mismatches — CPU is stable
+    device = "mps" if torch.backends.mps.is_available() else "cpu" # MPS can cause device mismatches — CPU is stable
     print(f"Device: {device}")
 
     trainer = ConstrainedMARLTrainer(
@@ -623,7 +650,7 @@ if __name__ == "__main__":
         trainer.load(args.load)
         results = trainer.evaluate()
     else:
-        results = trainer.train(total_steps=args.timesteps)
+        results = trainer.train(total_steps=args.timesteps, n_updates=args.updates)
 
     if args.compare:
         compare_methods(results, vanilla_ckpt=args.vanilla_ckpt)

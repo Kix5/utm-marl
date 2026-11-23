@@ -1,9 +1,11 @@
-# UTM PoC — BlueSky Integration
-## Multi-Agent UAV Traffic Management with BlueSky Simulator
+# UTM PoC — Multi-Agent UAV Traffic Management
 
-This extends the original AirSim-based UTM PoC to use **BlueSky**
-as the simulation backend — the standard open-source ATM/UTM simulator
-used in published research papers. Works natively on **Apple Silicon Mac**.
+Constrained Multi-Agent Reinforcement Learning for UAV Traffic Management,
+built on the [BlueSky](https://github.com/TUDelft-CNS-ATM/bluesky-gym)
+open-source ATM/UTM simulator. Works natively on Apple Silicon Mac.
+
+**Main contribution:** Lagrangian-constrained MARL that achieves 100% throughput
+with zero separation conflicts, versus ~2 conflicts/episode for vanilla MAPPO.
 
 ---
 
@@ -15,14 +17,14 @@ BlueSky Simulator (physics + visualization)
          │  traf.lat / traf.lon / traf.alt
          │  stack.stack("CRE / MOVE / DELETE")
          ▼
-BlueSkyUTMEnv (Gymnasium wrapper)
-  ├── SectorGraph    → maps lat/lon to 3×3 sector grid
-  ├── ConflictDetector → pairwise UAV separation check
-  └── Reward function  → throughput + safety + capacity
-         │
-         ▼
-MAPPO Trainer (shared policy, parameter sharing)
-  └── SharedActorCritic (256×256 MLP, same as original PoC)
+BlueSkyUTMEnv (Gymnasium wrapper)              ContinuousUTMEnv (kinematic, no BlueSky)
+  ├── SectorGraph    → 3×3 sector grid            ├── Continuous [d_heading, d_speed, v_rate]
+  ├── ConflictDetector → pairwise separation       ├── Reactive safety shield
+  └── Reward function                              └── Multi-layer altitude separation
+         │                                                │
+         ▼                                                ▼
+MAPPO / Constrained MARL                        Continuous PPO (Gaussian policy)
+  └── SharedActorCritic (256×256 MLP)              └── GraphActorCritic (ST-GNN)
 ```
 
 ---
@@ -40,8 +42,7 @@ Sector 6 [cap:2] | Sector 7 [cap:3] | Sector 8 [cap:2]
   25.25N,55.05E  |   25.25N,55.15E  |   25.25N,55.25E
 ```
 
-Each sector = ~11km × 11km  
-Cruise altitude = 300 ft (low-altitude UTM)
+Each sector ≈ 11 km × 11 km · Cruise altitude = 300 ft (low-altitude UTM)
 
 ---
 
@@ -49,7 +50,6 @@ Cruise altitude = 300 ft (low-altitude UTM)
 
 ### Step 1 — Install BlueSky-Gym
 ```bash
-# Due to pip bug (Feb 2025), install from source:
 git clone https://github.com/TUDelft-CNS-ATM/bluesky-gym.git
 cd bluesky-gym
 pip install -r requirements.txt
@@ -57,62 +57,173 @@ pip install -e .
 cd ..
 ```
 
-### Step 2 — Install other dependencies
+### Step 2 — Install dependencies
 ```bash
 pip install torch stable-baselines3 gymnasium tensorboard numpy
 ```
 
-### Step 3 — Verify everything works
+### Step 3 — Verify setup
 ```bash
-cd utm_bluesky
 python setup_and_test.py
 ```
 
 ---
 
-## Running
+## Running the Simulation
+
+### Step 1 — Verify installation
+```bash
+python setup_and_test.py
+```
+This runs the environment for 5 steps, testing the sector graph, conflict
+detector, and env loop. It works even without BlueSky installed (mock mode).
+
+### Step 2 — Quick simulation demo
+
+Visualize 5 UAVs navigating the sector grid (uses matplotlib, no BlueSky
+GUI needed):
 
 ```bash
-# Headless training (fast):
+# Random-policy demo (runs immediately, no training needed):
+python visualize_flights.py --random
+
+# Save as MP4 video:
+python visualize_flights.py --random --save
+```
+
+### Step 3 — Train and visualize a learned policy
+
+**Constrained MARL** (Lagrangian PPO — main contribution, ~2 min):
+```bash
+python training/train_constrained_marl.py
+python visualize_flights.py --checkpoint checkpoints_constrained_5/constrained_final.pt
+```
+
+**Vanilla MAPPO** (discrete sector-based):
+```bash
 python training/train_mappo_bluesky.py
+python visualize_flights.py --checkpoint checkpoints_bluesky/mappo_bluesky_final.pt
+```
 
-# With BlueSky GUI (see drones flying in real airspace):
+**With BlueSky GUI** (shows drones in real airspace radar view):
+```bash
 python training/train_mappo_bluesky.py --render
+```
 
-# Quick proof-of-concept (5000 steps):
-python training/train_mappo_bluesky.py --timesteps 5000
+**Continuous control** (kinematic env, Gaussian policy):
+```bash
+UTM_SCALE=100 python training/train_continuous.py --updates 100
+```
 
-# Monitor training:
-tensorboard --logdir logs_bluesky/
+### 3D demo video (after training continuous controller)
+```bash
+python demo_video_3d.py --drones 100 --scale 100 --steps 180 \
+    --ckpt checkpoints_continuous_100/continuous_best.pt --out demo3d.mp4
+```
+
+### Compare methods
+```bash
+python training/train_constrained_marl.py --compare    # constrained vs vanilla
+python run_matched_comparison.py                        # full comparison suite
+```
+
+### Monitor training
+```bash
+tensorboard --logdir logs_bluesky/        # vanilla MAPPO
+tensorboard --logdir logs_constrained/    # constrained MARL
 ```
 
 ---
 
-## What You'll See
+## Evaluation & Analysis
 
-When running with `--render`:
-- BlueSky opens a 2D radar view showing the 3×3 sector grid
-- 5 UAVs appear at their origin sectors
-- As training progresses, UAVs navigate toward their destinations
-- Conflicts (UAVs too close) are highlighted
-- Sector overloads visible when capacity exceeded
+### Full metrics suite
+```bash
+python eval_metrics.py
+```
+Reports: conflicts/episode, completion rate, path efficiency, sector overloads,
+inference latency, and more.
+
+### MILP baseline comparison
+```bash
+python milp_baseline.py
+```
+
+### Reward ablation study
+```bash
+python run_ablation.py
+```
+
+### Method comparison (MAPPO vs Constrained vs MILP)
+```bash
+python run_matched_comparison.py
+```
+
+### Generate publication figures
+```bash
+python generate_figures.py
+```
 
 ---
 
-## Connection to Original PoC
+## Generalization Study
 
-| Component | Original (AirSim) | This version (BlueSky) |
+The generalization experiment (`run_generalization.py`) evaluates whether the
+ST-GNN policy generalizes to unseen traffic patterns better than the MLP.
+This experiment **runs on Google Colab** (not locally):
+
+```bash
+# On Colab:
+python run_generalization.py --scale 100 --seeds 0 1 2 \
+    --updates 400 --steps 400 --layers 1 --n-test 20 --resume
+```
+
+---
+
+## Project Structure
+
+```
+env/
+  bluesky_utm_env.py        Gymnasium wrapper for BlueSky
+  continuous_utm_env.py      Kinematic continuous-control env
+  conflict_detector.py       Pairwise separation checking
+  sector_graph.py            3×3 sector grid mapping
+
+training/
+  train_mappo_bluesky.py     Vanilla MAPPO trainer
+  train_constrained_marl.py  Constrained MARL (Lagrangian PPO)
+  train_continuous.py        Continuous-control PPO
+  attention_policy.py        Attention-based policy network
+  eval_best.py               Evaluate best checkpoint
+
+visualize_flights.py         2D matplotlib animation of flights
+visualize_run.py             3D GNN policy visualization (GIF)
+demo_video_3d.py             3D rotating demo video (MP4)
+eval_metrics.py              Full evaluation metrics suite
+milp_baseline.py             MILP optimization baseline
+compare_all.py               Cross-method comparison
+run_matched_comparison.py    Matched comparison experiments
+run_ablation.py              Reward ablation study
+run_generalization.py        Generalization study (run on Colab)
+generate_figures.py          Generate publication figures
+setup_and_test.py            Installation verification
+```
+
+---
+
+## Pre-trained Checkpoints
+
+| Directory | Method | Scale |
 |---|---|---|
-| Physics backend | AirSim / Mock | BlueSky real simulation |
-| Coordinate system | AirSim XYZ meters | WGS84 lat/lon/alt |
-| Multi-drone control | AirSim API | BlueSky stack commands |
-| RL framework | Same MAPPO | Same MAPPO |
-| Sector graph | Grid in meters | Grid in degrees |
-| Conflict detection | 3D distance | Haversine + altitude |
-| Visualization | AirSim 3D | BlueSky 2D radar |
-
-The RL logic (MAPPO, reward function, observation space) is **identical**
-to the original PoC — only the physics backend changed.
+| `checkpoints_bluesky/` | Vanilla MAPPO | 5 drones |
+| `checkpoints_constrained_5/` | Constrained MARL | 5 drones |
+| `checkpoints_constrained_25/` | Constrained MARL | 25 drones |
+| `checkpoints_constrained_50/` | Constrained MARL | 50 drones |
+| `checkpoints_constrained_100/` | Constrained MARL | 100 drones |
+| `checkpoints_continuous_100/` | Continuous PPO | 100 drones |
+| `checkpoints_continuous_500/` | Continuous PPO | 500 drones |
+| `checkpoints_gnn_100/` | ST-GNN | 100 drones |
+| `checkpoints_gnn_500/` | ST-GNN | 500 drones |
 
 ---
 

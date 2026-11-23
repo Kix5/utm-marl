@@ -133,8 +133,6 @@ ax1.set_xticks(range(len(ns)))
 ax1.set_xticklabels([f"K={n}\n({g})" for n,g in zip(ns,grids)], fontsize=9)
 ax1.set_xlabel("UAV Count (Grid)", fontsize=10)
 ax1.set_ylabel("Solve Time (seconds)", fontsize=10)
-ax1.set_title("MILP Solve Time\n(red = CBC timeout >500s)",
-              fontsize=11, fontweight="bold", color="#2C3E50")
 ax1.grid(axis="y", alpha=0.4, linestyle="--", zorder=1)
 for i,(t,to) in enumerate(zip(times,tos)):
     label = "TIMEOUT" if to else f"{t:.3f}s"
@@ -152,8 +150,7 @@ ax2.set_xticks(range(len(ns)))
 ax2.set_xticklabels([f"K={n}" for n in ns], fontsize=9)
 ax2.set_xlabel("Number of UAVs", fontsize=10)
 ax2.set_ylabel("Binary Variables", fontsize=10)
-ax2.set_title("Problem Size: O(K²×S) Variables\n→ Exponential Complexity",
-              fontsize=11, fontweight="bold", color="#2C3E50")
+
 ax2.grid(axis="y", alpha=0.4, linestyle="--", zorder=1)
 for i,v in enumerate(nvars):
     ax2.text(i, v+200, f"{v:,}", ha="center",
@@ -177,14 +174,12 @@ ax3.text(48, 50, "TIMEOUT\nK=50", ha="center", fontsize=8,
          color=C_TIMEOUT, fontweight="bold")
 ax3.set_xlabel("Number of UAVs", fontsize=10)
 ax3.set_ylabel("Throughput (%)", fontsize=10)
-ax3.set_title("MILP vs RL Throughput\n(MILP times out at K=50)",
-              fontsize=11, fontweight="bold", color="#2C3E50")
+
 ax3.set_ylim(0, 115); ax3.set_xlim(0, 60)
 ax3.grid(alpha=0.4, linestyle="--", zorder=1)
 ax3.legend(fontsize=9, loc="lower left")
 
-fig2.suptitle("MILP Baseline Scalability — O(K²×S) Variable Growth",
-              fontsize=12, fontweight="bold", color="#2C3E50", y=1.02)
+
 plt.tight_layout()
 plt.savefig("./Project/utm_bluesky/fig_milp_scalability.png",
             dpi=150, bbox_inches="tight", facecolor=BG)

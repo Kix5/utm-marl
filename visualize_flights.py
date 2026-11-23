@@ -311,13 +311,16 @@ if __name__ == "__main__":
                     "checkpoints_bluesky/mappo_bluesky_final.pt"
         if os.path.exists(ckpt_path):
             print(f"Loading policy from: {ckpt_path}")
-            policy = Policy(env.agent_obs_dim, env.n_sectors)
-            ckpt   = torch.load(ckpt_path, map_location="cpu")
-            # Handle both full trainer checkpoint and bare state dict
-            state  = ckpt.get("policy", ckpt)
-            policy.load_state_dict(state, strict=True)
-            policy.eval()
-            print("Policy loaded.")
+            try:
+                policy = Policy(env.agent_obs_dim, env.n_sectors)
+                ckpt   = torch.load(ckpt_path, map_location="cpu")
+                state  = ckpt.get("policy", ckpt)
+                policy.load_state_dict(state, strict=True)
+                policy.eval()
+                print("Policy loaded.")
+            except RuntimeError as e:
+                print(f"Checkpoint incompatible ({e}) — using random policy")
+                policy = None
         else:
             print(f"No checkpoint at {ckpt_path} — using random policy")
 

@@ -1,4 +1,4 @@
-# Checkpoints (large files, personal)
+# Checkpoints (large binary files)
 checkpoints_*/
 logs_*/
 results/
@@ -8,10 +8,42 @@ figures/
 __pycache__/
 *.pyc
 *.pyo
+
+# OS files
 .DS_Store
 
 # Jupyter
 .ipynb_checkpoints/
 
-# Personal config
+# Environment
 *.env
+.venv/
+
+# Archives
+*.zip
+
+# Scratch / temp
+Untitled-*.py
+*.log
+
+# Generated images and videos (regenerate with generate_figures.py / demo scripts)
+*.png
+*.mp4
+*.gif
+
+# Comparison output dirs
+comparison_results*/
+cmp_curriculum/
+cmp_sweep/
+
+# Cloned dependencies
+bluesky-gym/
+Project/
+
+# Backup files
+*.bak
+
+# Old dev notes (not part of the project)
+LAYERED_MODE_README
+TACTICAL_FIX_README
+Readme matched comparison

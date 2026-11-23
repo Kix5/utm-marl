@@ -50,7 +50,7 @@ print("\n[3] Testing SectorGraph...")
 try:
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "env"))
     from sector_graph import SectorGraph
-    g = SectorGraph()
+    g = SectorGraph(rows=3, cols=3)   # 3x3 test grid (was hardcoded 5x5)
     assert g.n_sectors == 9
     lat, lon = g.sector_center_latlon(4)
     assert abs(lat - 25.15) < 0.01
